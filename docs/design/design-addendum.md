@@ -142,3 +142,122 @@ Everything else is built and tested in cloud sessions. The development work is l
 - One branch and one PR per ticket. Each session gets its ticket, the design docs and the new repo's `AGENTS.md`.
 - Another session runs a code review before you look.
 - You keep the decisions: repo name, auth mode, the Linear admin conversation, and what counts as done.
+
+## 7. Terminal-first Phase 1
+
+Decided 2026-10-23. Where this section disagrees with sections 1 to 6, this section wins.
+
+Three changes:
+
+- **The Narwarp terminal is the main client.** The board, the Needs-you queue and each ticket's Claude Code session live inside the terminal you already work in. The Textual TUI (NW-18) is dropped. `nw board` prints a plain-text board for SSH.
+- **Phase 1 is coding, todos and connectors.** Linear, the Work/Life split, the cloud lane, the calendar and the vault mirror wait for a later phase.
+- **Connectors are a general mechanism, not one-off integrations.** Any MCP server can be plugged in per project or per ticket, and the daemon keeps every credential.
+
+### 7.1 The daemon stays the brain
+
+`narwarpd` keeps every responsibility from the report: it is the only database writer, supervises Claude sessions, runs the hook sink and the reconciler, and now hosts connectors. The terminal is a client of its API and stores nothing but UI preferences.
+
+Why the board doesn't move into the Rust app:
+- Claude sessions, the hook sink and connector token refresh must keep running when the terminal is closed or has crashed.
+- The terminal, `nw`, MCP agents and later the phone all read one source of truth.
+- The logic stays in Python, so the Rust code is limited to views and a client.
+- The fork is AGPL. The daemon is a separate program that talks to it over a socket, which keeps the harness's own code out of the fork.
+
+### 7.2 What the terminal adds
+
+| Piece | What it does |
+|---|---|
+| `narwarp_client` crate | A typed client for the daemon API over a local unix socket or an SSH-forwarded one. Requests, an event subscription and reconnect with resume |
+| Board panel | Backlog, Todo, In Progress, In Review and Done, with project rows, the Needs-you queue and a ticket view with its message log. Keyboard first |
+| Session panes | Opening a ticket runs `claude attach <id>` in a pane or tab named after it. Badges come from the daemon's run state |
+| Approvals | Approve or deny from the Needs-you queue. The daemon signs and applies the decision |
+| Built-in agent | The fork's agent (Tusk on Ollama) is pointed at the daemon's MCP server through the existing file-based MCP config, so it can read the board and file proposals as a low-trust principal |
+
+**Status comes from the daemon.** Warp's own Claude Code integration installs the MIT-licensed `warpdotdev/claude-code-warp` plugin. Its hooks emit OSC 777 escape sequences carrying JSON events (permission requests, questions, stop), which the terminal parses (`app/src/terminal/cli_agent_sessions/`). Since Claude Code 2.1.141, hooks can hand Claude Code the sequence through a `terminalSequence` output field, so it may reach a pane running `claude attach`; NW-6 checks that. Either way the board's source of truth is the daemon's hooks and `claude agents --json`, and pane badges are a bonus.
+
+**Messages into sessions.** The same repo's `oz-harness-support` plugin is how Warp's Oz feeds a lead agent's messages into a Claude Code child:
+- `SessionStart` starts a listener.
+- `UserPromptSubmit` and `PostToolUse` drain a mailbox into the session as extra context.
+- `Stop` keeps the session going while messages are pending.
+
+It is a tested alternative to cross-session messaging for the daemon's inbox, and it's MIT, so NW-16 can borrow it.
+
+**Rules for the fork**, so it stays cheap to maintain:
+- New code goes in new crates or modules. Edits to hub files (`app/src/workspace/view.rs`, `left_panel.rs`, `settings_view/`, the persistence schema) are registrations of a few lines, each listed in `NARWARP_PATCHES.md`.
+- No harness state goes in the terminal's own database.
+- Harness work goes through `narwarpd`. The terminal never calls Claude or a connector on the harness's behalf.
+
+**Where it's built.** On your Mac, in a local Claude Code session. The app needs a macOS build and a screen to check it, and a cloud container has neither (this session's had 4 cores, 15 GB of RAM, about 29 GB of disk and no display). The `narwarp_client` crate and its tests can run anywhere.
+
+### 7.3 Connectors
+
+The goal is to plug in a tool when a project needs it, without handing the credential to an agent.
+
+| Part | Decision |
+|---|---|
+| Registry | A daemon table managed with `nw connector add/list/enable/disable`. Each connector has a transport (a stdio command or an HTTP URL), an auth method (none, a secret in the Keychain, or OAuth refreshed by the daemon), a scope (everywhere, a project or a ticket) and a tool policy |
+| Tool policy | An allowlist. Each tool is marked read or write. Write tools need a signed approval unless the policy allows them |
+| Gateway | The daemon's MCP server is the only MCP server a worker session sees (`--strict-mcp-config` with a generated `--mcp-config`, plus a generated `--plugin-dir` so a third-party mod can't widen tools or approve calls). It serves the board tools plus the tools of the connectors in scope, prefixed with the connector's name. The daemon runs stdio connectors itself, with their secrets in their own environment, and calls HTTP connectors with the token. Nothing secret appears in a session's config, environment or context |
+| Broker rules | Taken from Buzz's broker contract. The session's identity, ticket and scope come from its connection, never from tool arguments. Schemas are strict: unknown fields and explicit nulls are rejected. Each tool declares the scopes it needs, as in Arcade's `requires_auth` |
+| Child environments | Every process the daemon starts (`claude --bg`, connectors, terminal panes it asks for) gets an environment built from an allowlist, never the daemon's own. Buzz leaked a private key through a denylist |
+| Audit | Every call is logged on the ticket's board with the tool, a summary of the arguments and the result size. The redactor runs on what gets stored |
+| Untrusted output | Connector results are data, never instructions, and carry their provenance |
+| Other clients | The terminal's built-in agent and `nw` use the same gateway |
+| First connector | GitHub, through the official `github-mcp-server` with a fine-grained token in the Keychain: issues, PRs and checks to read, comments to write with approval. Pushing branches and opening PRs stays a daemon action behind an approval |
+
+Later integrations (Linear, Calendar, Gmail, Discord) start as connectors. Anything that also needs sync, such as Linear's roll-ups, adds a daemon job on top.
+
+**Known limit.** Workers run as the same macOS user as the daemon, so a determined agent could try the Keychain or the daemon socket directly. Claude Code's sandbox and permission rules (deny the `security` command, the socket path and the vault) narrow that, and NW-6 tests it. A separate macOS user for workers is the stronger option if that test fails.
+
+### 7.4 Todos
+
+Tickets have a kind:
+- **code:** has a repo and a worktree, and can be dispatched to a Claude lane.
+- **todo:** no agent. A checklist and an optional due date.
+
+Triage files both kinds by project. Models may propose priorities or a split into subtasks, and you apply them, as with every other proposal.
+
+### 7.5 API contract changes for a Rust client (NW-9)
+
+- JSON-RPC 2.0 over the unix socket, one JSON message per line, starting with a `hello` that negotiates the API version.
+- `subscribe` pushes `board.changed`, `run.changed`, `needs_you.changed` and `message.posted` events with sequence numbers, and resumes from `since` after a reconnect. If the daemon can't replay that far, it sends `events_lost` and the client takes a fresh snapshot (herdr's socket does this).
+- A ticket's displayed status is derived when it's read, from stored facts (run state, approvals pending, PR and checks) by a fixed precedence, rather than stored separately (Orchestrator.inc does this).
+- JSON Schema for every method, result and event, generated from the Python models and committed under `docs/design/api/`. The Rust client derives its types from it, and a conformance test runs both sides against the same fixtures.
+- The socket is at `$NARWARP_SOCKET` or `~/.narwarp/narwarpd.sock`. From another machine, forward it over SSH (Tailscale SSH to the Mac Studio).
+- `narwarpd --fake` serves seeded sample data with no Claude and no network, for client development and snapshot tests.
+
+### 7.6 Deferred
+
+| Deferred | Until | Notes |
+|---|---|---|
+| Linear (NW-4, NW-19) | A later phase | Comes back as a connector plus a sync job |
+| Work/Life split (AGENTS.md rule 8) | Linear's return | One space for now, grouped by project. The mode column and routing come back with work data |
+| Cloud lane (NW-20) | A later phase | |
+| Vault mirror (NW-14, NW-15) and the chunker | Phase 2 | The redactor stays in Phase 1, because the gateway uses it |
+| Textual TUI (NW-18) | Dropped | Replaced by the terminal board and `nw board` |
+| Tusk (NW-17) | Install, as before | Its chat surface can later be the terminal's agent panel |
+
+### 7.7 Upstream Warp
+
+Pending: the analysis of what official Warp has shipped since 2026-05-07 is still running. NW-23's upstream step waits for it.
+
+### 7.8 Projects to study next
+
+Ranked. Each one answers a question for an upcoming ticket. Full notes: [research/harness-survey-2026-10.md](research/harness-survey-2026-10.md) and [research/buzz-and-goose.md](research/buzz-and-goose.md).
+
+| # | Project | License | Question it answers | For |
+|---|---|---|---|---|
+| 1 | Warp's `cli_agent_sessions`, Agent Management Panel and `claude-code-warp` | AGPL app, MIT plugin | Can tickets ride the existing CLI-agent event schema with a ticket ID added, and how does the daemon feed unattached sessions into the panel? | NW-25, NW-26 |
+| 2 | cmux Feed | GPL, study only | How a permission hook parks on a request ID for up to 120 s while you answer from the sidebar, adapted to signed single-use approvals | NW-26 |
+| 3 | herdr | Apache-2.0 | Sequenced state reports, `events.subscribe` and re-snapshot after `events_lost`, as the shape of the terminal-daemon socket | NW-9, NW-24 |
+| 4 | Orchestrator.inc | Apache-2.0 | Board columns derived from stored facts by precedence, pushed from a SQLite change log | NW-9, NW-25 |
+| 5 | Buzz | Apache-2.0 | The environment fence, the broker contract, per-ticket supervision and bounded Stop objections | NW-16, NW-21 |
+| 6 | goose recipes | Apache-2.0 | `retry.checks` and `available_tools` as ticket templates with deterministic checks | NW-16 |
+| 7 | OpenAI Symphony SPEC | Apache-2.0 | Claim states, tracker tools on the host, success at a handoff state, never stalling on input | NW-11, NW-16 |
+| 8 | kata | MIT | Closing with evidence, attention states, idempotency keys, MCP tools exposed by section | NW-8, NW-11 |
+| 9 | MCP 2026-07-28 and arcade-mcp | spec, MIT | Tokens held by the server, per-tool scopes, the owner's OAuth by URL elicitation | NW-21 |
+| 10 | ToolHive vMCP, Docker MCP Gateway, or plain `--strict-mcp-config` | Apache-2.0, MIT | Which gives per-ticket tool allowlists with the least machinery | NW-21 |
+| 11 | nono and Infisical Agent Vault | Apache-2.0, MIT | Phantom tokens for `git` and `gh`, if the daemon ever needs workers to push | NW-22 |
+| 12 | Agent of Empires | MIT | Hook status plus pane checks plus freshness bounds, as the watchdog for stale states | NW-16 |
+
+Don't copy code from GPL or AGPL projects (cmux, Xum, Archestra, Warp's app) into this repo. Apache-2.0 and MIT code can be borrowed with attribution.

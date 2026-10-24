@@ -6,12 +6,12 @@ How to work in this repository, for AI agents and for humans. Read this file fir
 
 Narwarp is a personal, local-first agentic harness made of four parts:
 
-- **`narwarpd`:** a Python daemon that owns tickets, boards, the calendar plan and integrations.
-- **`nw`:** the command-line client.
-- **An MCP server:** the interface for Claude Code and local Ollama agents.
-- **A Textual TUI:** the board in a terminal.
+- **`narwarpd`:** a Python daemon that owns tickets, boards, Claude Code sessions and connectors. This repo.
+- **`nw`:** the command-line client. This repo.
+- **An MCP gateway:** the only MCP server agents see. It serves the board tools plus the tools of the connectors in scope. This repo.
+- **The Narwarp terminal:** the main client, a Rust fork of Warp in `lilaland/narwarp`. It shows the board and the Needs-you queue and opens each ticket's Claude Code session in a pane.
 
-It will run on the owner's home Mac Studio (macOS, 36 GB). Development happens first, in cloud sessions; installation on the Mac comes after.
+Phase 1 covers coding tickets, todos and connectors (see `docs/design/design-addendum.md` section 7). It will run on the owner's home Mac Studio (macOS, 36 GB). The daemon is built in cloud sessions, the terminal in a local session on the owner's Mac.
 
 ## Design sources
 
@@ -21,7 +21,8 @@ It will run on the owner's home Mac Studio (macOS, 36 GB). Development happens f
 | `docs/design/narwarp-agentic-harness-design.md` | The full design report, with 85 citations |
 | `docs/design/seed-backlog.md` | Tickets NW-1 to NW-20 with acceptance criteria, plus a status block |
 | `docs/design/api-contract.md` | The frozen socket API, CLI, MCP tool and DB schema contract (written in NW-9) |
-| `docs/design/research/` | Evidence behind the decisions (eight research notes) |
+| `docs/design/api/` | JSON Schema for every API method, result and event, generated from the Python models (NW-9) |
+| `docs/design/research/` | Evidence behind the decisions (the research notes, dated in each file) |
 
 Don't change an architectural decision without asking the owner. Propose it in the PR description instead.
 
@@ -34,14 +35,17 @@ Don't change an architectural decision without asking the owner. Propose it in t
 5. Board messages are typed and append-only. A `result` needs evidence, and only the owner marks a ticket Done.
 6. Tusk, the conductor, only proposes. The reconciler applies accepted proposals.
 7. Vault mirror: SQLite wins, only allowlisted fields are ingested, and nothing is ever written under the vault's `notes/`.
-8. Work and Life never mix. Every row has a mode column, and routing between them happens in code.
+8. Deferred (2026-10-23): the Work/Life split. Until it returns with Linear, everything is one space grouped by project. Don't add mode columns or routing.
 9. Claude Code is driven only through the official `claude` binary: background sessions, hooks and `claude agents --json`. Never proxy, copy or store Claude OAuth tokens.
+10. Connectors reach agents only through the daemon's MCP gateway. Worker sessions start with `--strict-mcp-config` and a generated `--mcp-config` naming only the gateway. Connector credentials never appear in a session's config, environment or context.
+11. The terminal is a client. It talks to `narwarpd` only through the versioned API and keeps no harness state of its own.
 
 ## Stack and conventions
 
 - Python 3.12 or later, uv, ruff (lint and format), pytest with pytest-asyncio, and type hints throughout, checked in CI.
 - The standard-library `sqlite3`, with migrations as numbered SQL files and no ORM.
-- The official MCP Python SDK. Textual, pinned to an exact version. watchdog for file watching. keyring for secrets.
+- The official MCP Python SDK. watchdog for file watching. keyring for secrets.
+- The terminal side is Rust in `lilaland/narwarp`. Its rules for keeping the fork cheap to maintain are in design-addendum section 7.2.
 - Tests never touch the network, the real `claude` binary, Ollama, or the user's home directory. Use the fakes in `tests/fakes/`.
 - macOS-only behavior (LaunchAgent, FSEvents, Keychain, privacy prompts) sits behind interfaces with Linux fallbacks, so CI runs on Ubuntu.
 - Commands (filled in by NW-7): `uv sync`, `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`.
