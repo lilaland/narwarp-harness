@@ -40,5 +40,6 @@ Linear, calendar, Discord, email and search come later, in Phases 2–4 of the b
 | [client-tui-and-build-vs-fork.md](research/client-tui-and-build-vs-fork.md) | Upstream health, trial merge, WarpUI effort, porting, TUI frameworks, AGPL |
 | [harness-survey-2026-10.md](research/harness-survey-2026-10.md) | 2026-10-23: terminal-integrated agent managers, task systems for agents, MCP gateways and credential brokers |
 | [buzz-and-goose.md](research/buzz-and-goose.md) | 2026-10-23: Block's Buzz and goose: architecture, supervision, broker contract, recipes |
+| [warp-upstream-2026-10.md](research/warp-upstream-2026-10.md) | 2026-10-23: what official Warp shipped since Zap stopped syncing, cherry-pick costs, login gating, a re-fork estimate |
 
 Facts about upstream activity, product status and model names reflect each note's date and will drift.

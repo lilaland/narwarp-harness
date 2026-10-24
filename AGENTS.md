@@ -56,7 +56,7 @@ Don't change an architectural decision without asking the owner. Propose it in t
 - Tick an acceptance criterion only with evidence: a test name, a CI run or a commit.
 - Keep PRs small, and add tests with every change in behavior.
 - Another session reviews each PR before the owner does. Don't merge to `main` without the owner's approval.
-- Don't copy code from Warp, Zap or Toad, which are AGPL. Porting the owner's own redactor and chunker from `lilaland/narwarp` (branch `phase-4/watcher-and-polish`, `app/src/rag/redact.rs` and `chunk.rs`) is fine.
+- Don't copy code from GPL or AGPL projects (Warp, Zap, Toad, cmux, Xum, Archestra) into this repo. Apache-2.0 and MIT code can be borrowed with attribution. Porting the owner's own redactor and chunker from `lilaland/narwarp` (branch `phase-4/watcher-and-polish`, `app/src/rag/redact.rs` and `chunk.rs`) is fine.
 - No license file until the owner chooses one.
 - Never commit secrets. The redactor runs on test fixtures too.
 

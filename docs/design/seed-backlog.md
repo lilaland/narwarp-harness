@@ -94,6 +94,7 @@ The managing session keeps this block current.
 - Track: C · Runs in: cloud · Depends on: NW-9
 - [ ] `nw add`, `nw board`, `nw start`, `nw post`, `nw approve` and `nw done` work against a test daemon. `nw add` takes coding tickets and todos
 - [ ] `nw board` prints a readable plain-text board, for use over SSH
+- [ ] `nw attach <ticket>` reports `$WARP_FOCUS_URL` (when set) to the daemon and then runs `claude attach <id>`; `nw open <ticket>` asks the terminal to focus that pane
 - [ ] Output in both JSON and plain text
 
 ### NW-11 · MCP server with six tools
@@ -195,7 +196,10 @@ Rust work in the fork, run as a local Claude Code session on the owner's Mac. Br
 - [ ] `phase-4/watcher-and-polish` builds and runs on the Mac. Build time and the exact commands are recorded in the fork's `NARWARP.md`
 - [ ] The fork's `main` fast-forwarded to `phase-4/watcher-and-polish`, with the owner's OK, so terminal PRs target `main`
 - [ ] `NARWARP_PATCHES.md` lists every hub-file edit Narwarp makes, with the reason
-- [ ] The upstream decision in design-addendum section 7.7 is carried out
+- [ ] The six link commits from design-addendum section 7.7 applied (`27f4933b`, `207f9d5`, `a017b9a`, `679e426d`, `e1be417`, `482f63a`), with conflicts resolved and the existing tests passing
+- [ ] `vertical_tabs_summary_mode` and `git_operations_in_code_review` added to the `default` features
+- [ ] Needs-input, stop-failure and pending-background-work events handled, ported by hand from #16232, #13784 and #16367, with the `claude-code-warp` minimum version raised to match
+- [ ] `NARWARP.md` describes a monthly upstream check: list upstream commits touching security, escape sequences or input handling since the last check, and record what was ported
 
 ### NW-24 · `narwarp_client` crate
 - Track: T · Runs in: anywhere (pure Rust, no WarpUI) · Depends on: NW-9 (frozen contract)
@@ -210,8 +214,8 @@ Rust work in the fork, run as a local Claude Code session on the owner's Mac. Br
 - [ ] Live updates from the event stream, and snapshot tests against `narwarpd --fake`
 
 ### NW-26 · Ticket sessions in panes, and approvals
-- Track: T · Runs in: your Mac · Depends on: NW-25, NW-16
-- [ ] Opening a ticket runs `claude attach <id>` in a pane or tab named after it, locally or over SSH to the Mac Studio
+- Track: T · Runs in: your Mac · Depends on: NW-25, NW-16, NW-10
+- [ ] Opening a ticket runs `nw attach <ticket>` in a pane or tab named after it, locally or over SSH to the Mac Studio. The board, `nw open` and notifications jump back to the pane through its focus link
 - [ ] Pane and tab badges from the daemon's run state; a notification when something lands in Needs you
 - [ ] Approve or deny from the terminal. The decision goes to the daemon, which signs it; a pending permission request waits on its request ID meanwhile (the cmux Feed pattern)
 

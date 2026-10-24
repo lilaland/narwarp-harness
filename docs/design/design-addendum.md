@@ -169,7 +169,7 @@ Why the board doesn't move into the Rust app:
 |---|---|
 | `narwarp_client` crate | A typed client for the daemon API over a local unix socket or an SSH-forwarded one. Requests, an event subscription and reconnect with resume |
 | Board panel | Backlog, Todo, In Progress, In Review and Done, with project rows, the Needs-you queue and a ticket view with its message log. Keyboard first |
-| Session panes | Opening a ticket runs `claude attach <id>` in a pane or tab named after it. Badges come from the daemon's run state |
+| Session panes | Opening a ticket runs `nw attach <ticket>` in a pane or tab named after it: it records the pane's focus link with the daemon, then runs `claude attach <id>`. Badges come from the daemon's run state (see 7.7) |
 | Approvals | Approve or deny from the Needs-you queue. The daemon signs and applies the decision |
 | Built-in agent | The fork's agent (Tusk on Ollama) is pointed at the daemon's MCP server through the existing file-based MCP config, so it can read the board and file proposals as a low-trust principal |
 
@@ -239,7 +239,33 @@ Triage files both kinds by project. Models may propose priorities or a split int
 
 ### 7.7 Upstream Warp
 
-Pending: the analysis of what official Warp has shipped since 2026-05-07 is still running. NW-23's upstream step waits for it.
+Checked 2026-10-23 against `warpdotdev/warp` master `1e6c3ae`. Full notes: [research/warp-upstream-2026-10.md](research/warp-upstream-2026-10.md).
+
+**Decision: stay on the current base for Phase 1, take a small bundle now, and re-fork later.** Warp has 2,298 commits that Zap never took, but most of the new code is cloud and agent code (Oz, "software factories") that a local-first fork would hide. What helps a terminal-first harness is small and local:
+
+| Take now (NW-23) | Why | Cost |
+|---|---|---|
+| Six link commits: `27f4933b` (focus a pane by link), `207f9d5` (open a saved tab config by link), `a017b9a` (tab-config commands run in order), `679e426d` (`WARP_FOCUS_URL` and the pane's session UUID exported into every pane), `e1be417` (open a file by link), `482f63a` (tab commands from launch-config links) | `nw open` and notifications can open a ticket's session tab and jump back to its pane | 14 conflict hunks, no cloud |
+| Two features the fork already has but leaves off: `vertical_tabs_summary_mode` and `git_operations_in_code_review` | Add them to the `default` features | A flag flip each |
+| The new CLI-agent events: needs-input (#16232), stop-failure (#13784), pending background work (#16367) | Better pane badges for Claude Code | About 200 lines by hand. The parser ignores unknown fields, so a ticket ID can ride along |
+| Optional: MCP OAuth and log fixes, terminal lifecycle recovery (#13788) | Stability | Medium |
+
+**Not useful now:**
+- **ACP** runs only inside `warp agent run`, which needs a Warp login and records every run on Warp's server. There is no in-app ACP client yet ([#7326](https://github.com/warpdotdev/warp/issues/7326) is open). It starts Claude through the `claude-code-acp` adapter, which is a rule 9 question for later.
+- **Official bring-your-own-key** sends each request through Warp's server and needs an account, so the fork's local Ollama support (from Zap) stays.
+- **The Agent Management view, orchestration and `warp_tui`** depend on Warp's server.
+- **Tab groups and pinned tabs** would be nice, but they bring 112 conflict hunks, so they wait for a re-fork.
+
+There is no plugin API for custom panels, so the board has to be compiled into the fork. That is why the fork rules in 7.2 matter.
+
+**How panes use the links.** Inside the terminal, the board opens a ticket's pane directly. `nw attach NW-142` is a small wrapper: it reports the pane's `$WARP_FOCUS_URL` to the daemon, then runs `claude attach <id>`. The board, `nw open` and notifications then jump back to the pane through that link.
+
+**Re-fork later.** About 1.5 to 2.5 weeks for a minimal re-fork: lift the login gates, change the app's identity, and port the fork's own layer (21 of its 33 commits replay cleanly). Allow 3 to 5 weeks if the Ollama agent is rebuilt on Warp's new external-harness API. Triggers:
+- the board is working and stable;
+- Warp ships an in-app ACP client, which could replace Zap's Ollama layer with an ACP agent such as OpenCode;
+- an upstream security fix lands that is hard to port.
+
+**The cost of staying.** The base stays about 2,460 commits behind and gets no upstream fixes, security fixes included, unless they're ported. NW-23 sets up a monthly check for them.
 
 ### 7.8 Projects to study next
 
